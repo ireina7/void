@@ -1,35 +1,82 @@
-package db
+package postgres
 
 import (
+	"database/sql"
 	"fmt"
+	"os"
 
+	database "github.com/ireina7/void/db"
+	"github.com/ireina7/void/logger"
 	"github.com/ireina7/void/utils"
 )
 
-// BlogHeader table
-// | id | author | date | preview |
-type BlogHeader struct {
-	id      int
-	title   string
-	author  string
-	date    string
-	preview string
+// // BlogHeader table
+// // | id | author | date | preview |
+// type BlogHeader struct {
+// 	id      int
+// 	title   string
+// 	author  string
+// 	date    string
+// 	preview string
+// }
+
+// // Blog table
+// // | id | content |
+// type Blog struct {
+// 	BlogHeader
+// 	content string
+// }
+
+var db *sql.DB
+
+type DbParam struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	DbName   string
 }
 
-// Blog table
-// | id | content |
-type Blog struct {
-	BlogHeader
-	content string
+type Logger = logger.Effect
+type DbConnection struct {
+	DbParam
+	Logger
+	raw *sql.DB
 }
 
-type Effect interface {
-	QueryBlogHeaders(expr string) ([]BlogHeader, error)
-	QueryBlog(id int) (Blog, error)
-	CreateTables() error
-	AddBlog(blog Blog) error
-	DeleteBlog(blogId int) error
-	DropTable(tableName string) error
+type BlogHeader = database.BlogHeader
+type Blog = database.Blog
+
+// Connect to database
+func (self *DbConnection) Init() error {
+	psqlconn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		self.Host, self.Port, self.User, self.Password, self.DbName,
+	)
+	// fmt.Println(psqlconn)
+	db, err := sql.Open("postgres", psqlconn)
+
+	if err != nil {
+		return err
+	}
+	if err = db.Ping(); err != nil {
+		return err
+	}
+	self.raw = db
+	return nil
+}
+
+// Close database connection
+func (self *DbConnection) Close() error {
+	return self.raw.Close()
+}
+
+func (self *DbConnection) Exec(expr string, args ...any) (sql.Result, error) {
+	return self.raw.Exec(expr, args...)
+}
+
+func (self *DbConnection) Query(expr string, args ...any) (*sql.Rows, error) {
+	return self.raw.Query(expr, args...)
 }
 
 func (conn *DbConnection) QueryBlogHeaders(cond string) ([]BlogHeader, error) {
@@ -42,7 +89,7 @@ func (conn *DbConnection) QueryBlogHeaders(cond string) ([]BlogHeader, error) {
 	var blogs []BlogHeader
 	for rows.Next() {
 		var blog BlogHeader
-		if err := rows.Scan(&blog.id, &blog.author, &blog.date, &blog.preview); err != nil {
+		if err := rows.Scan(&blog.Id, &blog.Title, &blog.Author, &blog.Date, &blog.Preview); err != nil {
 			return nil, fmt.Errorf("Blogerror %v", err)
 		}
 		blogs = append(blogs, blog)
@@ -69,7 +116,7 @@ func (conn *DbConnection) QueryBlog(id int) (Blog, error) {
 		return blog, nil
 	}
 	if rows.Next() {
-		if err := rows.Scan(&blog.id, &blog.content); err != nil {
+		if err := rows.Scan(&blog.Id, &blog.Content); err != nil {
 			return blog, err
 		}
 	}
@@ -91,7 +138,7 @@ func (conn *DbConnection) CreateTables() error {
 func (conn *DbConnection) CreateBlogHeaderTable() error {
 	res, err := conn.Exec(
 		`CREATE TABLE blog_headers (
-			id      integer PRIMARY KEY,
+			id      SERIAL PRIMARY KEY,
 			title   varchar(50),
 			author  varchar(30),
 			date    date,
@@ -108,7 +155,7 @@ func (conn *DbConnection) CreateBlogHeaderTable() error {
 func (conn *DbConnection) CreateBlogTable() error {
 	_, err := conn.Exec(
 		`CREATE TABLE blogs (
-			id      integer PRIMARY KEY,
+			id      SERIAL PRIMARY KEY,
 			content text
 		);`,
 	)
@@ -128,12 +175,24 @@ func (conn *DbConnection) DropTable(tableName string) error {
 }
 
 func (conn *DbConnection) AddBlog(blog Blog) error {
+	// Insert into blog headers
 	cmd := fmt.Sprintf(`
-		INSERT INTO blogs (id, title, author, date, preview) 
-		VALUES (%d, '%s', '%s', '%s', '%s');`,
-		blog.id, blog.title, blog.author, blog.date, blog.preview,
+		INSERT INTO blog_headers (title, author, date, preview) 
+		VALUES ('%s', '%s', '%s', '%s');`,
+		blog.Title, blog.Author, blog.Date, blog.Preview,
 	)
 	_, err := conn.Exec(cmd)
+	if err != nil {
+		return err
+	}
+
+	// Insert into blogs(content)
+	cmd = fmt.Sprintf(`
+		INSERT INTO blogs (content)
+		VALUES ('%s');`,
+		blog.Content,
+	)
+	_, err = conn.Exec(cmd)
 	if err != nil {
 		return err
 	}
@@ -169,4 +228,23 @@ func (conn *DbConnection) DeleteBlog(blogId int) error {
 		return err
 	}
 	return nil
+}
+
+func Instance(logger logger.Effect) (DbConnection, error) {
+	db := DbConnection{
+		DbParam: DbParam{
+			Host:     os.Getenv("DB_HOST"),
+			Port:     os.Getenv("DB_PORT"),
+			User:     os.Getenv("DB_USERNAME"),
+			Password: os.Getenv("DB_PASSWORD"),
+			DbName:   os.Getenv("DB_NAME"),
+		},
+		Logger: logger,
+	}
+	err := db.Init()
+	if err != nil {
+		return db, err
+	}
+	db.Info("Database connected")
+	return db, nil
 }

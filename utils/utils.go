@@ -3,6 +3,8 @@ package utils
 import (
 	"log"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type Any = interface{}
@@ -33,4 +35,11 @@ func InitLogger() error {
 	}
 	log.SetOutput(file)
 	return nil
+}
+
+func LoadEnv() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
