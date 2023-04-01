@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	app "github.com/ireina7/void/app/http"
 	"github.com/ireina7/void/utils"
 	_ "github.com/lib/pq"
 )
@@ -11,14 +12,9 @@ import (
 func main() {
 	fmt.Println("Void link start!")
 	utils.LoadEnv()
-	app, err := Build()
+	app, err := app.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
 	app.Run()
-
-	// err = db.CreateTables()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 }
