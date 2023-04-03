@@ -12,7 +12,7 @@ import (
 func main() {
 	fmt.Println("Void link start!")
 	utils.LoadEnv()
-	app, err := app.Build()
+	app, err := app.Instance()
 	if err != nil {
 		log.Fatal(err)
 	}

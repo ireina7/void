@@ -19,6 +19,7 @@ func (self *LocalConf) Port() string {
 	return self.port
 }
 
+// Local configuration
 func Instance() LocalConf {
 	return LocalConf{
 		version: "0.1.0",

@@ -46,6 +46,7 @@ type DbConnection struct {
 
 type BlogHeader = database.BlogHeader
 type Blog = database.Blog
+type Account = database.Account
 
 // Connect to database
 func (self *DbConnection) Init() error {
@@ -123,7 +124,43 @@ func (conn *DbConnection) QueryBlog(id int) (Blog, error) {
 	return blog, nil
 }
 
-func (conn *DbConnection) CreateTables() error {
+func (conn *DbConnection) QueryAccount(name string) (Account, error) {
+	var account Account
+	rows, err := conn.Query(fmt.Sprintf(`SELECT * FROM accounts WHERE name = "%s"`, name))
+	if err != nil {
+		return account, nil
+	}
+	if rows.Next() {
+		if err := rows.Scan(&account.Id, &account.Name, &account.Passwd); err != nil {
+			return account, err
+		}
+	}
+	return account, nil
+}
+
+func (conn *DbConnection) AddAccount(name string, passwd string) error {
+	cmd := fmt.Sprintf(`
+		INSERT INTO accounts (name, passwd) 
+		VALUES ('%s', '%s');`,
+		name, passwd,
+	)
+	_, err := conn.Exec(cmd)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (conn *DbConnection) DeleteAccount(id int) error {
+	cmd := fmt.Sprintf(`DELETE FROM accounts WHERE id = %d`, id)
+	_, err := conn.Exec(cmd)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (conn *DbConnection) CreateBlogTables() error {
 	err := conn.CreateBlogHeaderTable()
 	if err != nil {
 		return err
@@ -157,6 +194,20 @@ func (conn *DbConnection) CreateBlogTable() error {
 		`CREATE TABLE blogs (
 			id      SERIAL PRIMARY KEY,
 			content text
+		);`,
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (conn *DbConnection) CreateAccountTable() error {
+	_, err := conn.Exec(
+		`CREATE TABLE accounts (
+			id      SERIAL PRIMARY KEY,
+			name 	varchar(20),
+			passwd  varchar(20)
 		);`,
 	)
 	if err != nil {
