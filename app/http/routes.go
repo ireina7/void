@@ -44,19 +44,22 @@ func corsHandler(h Handler) Handler {
 	}
 }
 
-func (app *App) queryBlogs(w http.ResponseWriter, req *http.Request) {
+func (app *HttpApp) queryBlogs(w http.ResponseWriter, req *http.Request) {
 	app.Info("Querying blogs...")
 	setupCORS(&w, req)
-	blogs, err := app.QueryBlogHeaders("1 = 1")
-	if err != nil {
-		app.Error(err)
+	blogs := app.QueryBlogHeaders("1 = 1")
+	if err := app.Database.Error(); err != nil {
+		app.LogError(err)
 	}
 	fmt.Println(blogs)
 	blogJson, err := json.Marshal(blogs)
+	if err != nil {
+		app.LogError(err)
+	}
 	w.Write(blogJson)
 }
 
-func (app *App) submitBlog(w http.ResponseWriter, req *http.Request) {
+func (app *HttpApp) submitBlog(w http.ResponseWriter, req *http.Request) {
 	app.Info("Submitting blog...")
 	setupCORS(&w, req)
 	var blog db.Blog
@@ -66,51 +69,59 @@ func (app *App) submitBlog(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = app.AddBlog(blog)
-	if err != nil {
-		app.Error(err)
+	app.AddBlog(blog)
+	if err = app.Database.Error(); err != nil {
+		app.LogError(err)
 	}
 }
 
-func (app *App) queryBlog(w http.ResponseWriter, req *http.Request) {
+func (app *HttpApp) queryBlog(w http.ResponseWriter, req *http.Request) {
 	setupCORS(&w, req)
 	var id int
 	id, err := strconv.Atoi(strings.TrimPrefix(req.URL.Path, "/blog/"))
 	app.Info(fmt.Sprintf("Querying blog { id: %d }", id))
 	if err != nil {
-		app.Error(err)
+		app.LogError(err)
 		return
 	}
-	blog, err := app.QueryBlog(id)
-	if err != nil {
-		app.Error(err)
+	blog := app.QueryBlog(id)
+	if err = app.Database.Error(); err != nil {
+		app.LogError(err)
 	}
 	blogJson, err := json.Marshal(blog)
 	w.Write(blogJson)
 }
 
-func (app *App) deleteBlog(w http.ResponseWriter, req *http.Request) {
+func (app *HttpApp) deleteBlog(w http.ResponseWriter, req *http.Request) {
 	setupCORS(&w, req)
 	var id int
 	id, err := strconv.Atoi(strings.TrimPrefix(req.URL.Path, "/delete/"))
 	app.Info(fmt.Sprintf("Deleting blog { id: %d }", id))
 	if err != nil {
-		app.Error(err)
+		app.LogError(err)
 		return
 	}
-	err = app.DeleteBlog(id)
-	if err != nil {
-		app.Error(err)
+	app.DeleteBlog(id)
+	if err := app.Database.Error(); err != nil {
+		app.LogError(err)
 	}
 }
 
-func (app *App) checkAccount(w http.ResponseWriter, req *http.Request) {
+type AccountQuery struct {
+	Name   string `json:"name"`
+	Passwd string `json:"passwd"`
+}
+
+func (app *HttpApp) checkAccount(w http.ResponseWriter, req *http.Request) {
 	setupCORS(&w, req)
-	var accountName string
-	app.Info(fmt.Sprintf("Checking account { name: %s }", accountName))
-	account, err := app.QueryAccount(accountName)
-	if err != nil {
-		app.Error(err)
+	var query AccountQuery
+	err := json.NewDecoder(req.Body).Decode(&query)
+	// var accountName string
+	// accountName = strings.TrimPrefix(req.URL.Path, "/login/")
+	app.Info(fmt.Sprintf("Checking account { name: %s }", query.Name))
+	account := app.QueryAccount(query.Name)
+	if err = app.Database.Error(); err != nil {
+		app.LogError(err)
 		return
 	}
 	utils.Use(account)

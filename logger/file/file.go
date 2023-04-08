@@ -10,7 +10,7 @@ type FileLogger struct{}
 func (self *FileLogger) Info(msg string) {
 	log.Println("[Info] " + msg)
 }
-func (self *FileLogger) Error(err error) {
+func (self *FileLogger) LogError(err error) {
 	log.Println("[Error] " + err.Error())
 }
 func (self *FileLogger) Debug(s string) {

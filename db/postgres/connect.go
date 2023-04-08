@@ -7,7 +7,6 @@ import (
 
 	database "github.com/ireina7/void/db"
 	"github.com/ireina7/void/logger"
-	"github.com/ireina7/void/utils"
 )
 
 // // BlogHeader table
@@ -42,6 +41,7 @@ type DbConnection struct {
 	DbParam
 	Logger
 	raw *sql.DB
+	err error
 }
 
 type BlogHeader = database.BlogHeader
@@ -68,8 +68,11 @@ func (self *DbConnection) Init() error {
 }
 
 // Close database connection
-func (self *DbConnection) Close() error {
-	return self.raw.Close()
+func (self *DbConnection) Close() {
+	err := self.raw.Close()
+	if err != nil {
+		self.err = err
+	}
 }
 
 func (self *DbConnection) Exec(expr string, args ...any) (sql.Result, error) {
@@ -80,10 +83,14 @@ func (self *DbConnection) Query(expr string, args ...any) (*sql.Rows, error) {
 	return self.raw.Query(expr, args...)
 }
 
-func (conn *DbConnection) QueryBlogHeaders(cond string) ([]BlogHeader, error) {
+func (conn *DbConnection) QueryBlogHeaders(cond string) []BlogHeader {
+	if conn.err != nil {
+		return nil
+	}
 	rows, err := conn.Query(fmt.Sprintf(`SELECT * FROM blog_headers WHERE %s`, cond))
 	if err != nil {
-		return nil, err
+		conn.err = err
+		return nil
 	}
 	defer rows.Close()
 
@@ -91,54 +98,68 @@ func (conn *DbConnection) QueryBlogHeaders(cond string) ([]BlogHeader, error) {
 	for rows.Next() {
 		var blog BlogHeader
 		if err := rows.Scan(&blog.Id, &blog.Title, &blog.Author, &blog.Date, &blog.Preview); err != nil {
-			return nil, fmt.Errorf("Blogerror %v", err)
+			conn.err = fmt.Errorf("Blogerror %v", err)
+			return nil
 		}
 		blogs = append(blogs, blog)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("Blogerror %v", err)
+		conn.err = fmt.Errorf("Blogerror %v", err)
+		return nil
 	}
-	return blogs, nil
+	return blogs
 }
 
-func (conn *DbConnection) QueryBlog(id int) (Blog, error) {
+func (conn *DbConnection) QueryBlog(id int) Blog {
+	if conn.err != nil {
+		return Blog{}
+	}
 	blog := Blog{}
 
 	// Query blog headers
-	blogHeader, err := conn.QueryBlogHeaders(fmt.Sprintf(`id = %d`, id))
-	if err != nil {
-		return blog, err
+	blogHeader := conn.QueryBlogHeaders(fmt.Sprintf(`id = %d`, id))
+	if conn.Error() != nil {
+		return blog
 	}
 	blog.BlogHeader = blogHeader[0]
 
 	// Query blogs table for content
 	rows, err := conn.Query(fmt.Sprintf(`SELECT * FROM blogs WHERE id = %d`, id))
 	if err != nil {
-		return blog, nil
+		return blog
 	}
 	if rows.Next() {
 		if err := rows.Scan(&blog.Id, &blog.Content); err != nil {
-			return blog, err
+			conn.err = err
+			return blog
 		}
 	}
-	return blog, nil
+	return blog
 }
 
-func (conn *DbConnection) QueryAccount(name string) (Account, error) {
+func (conn *DbConnection) QueryAccount(name string) Account {
 	var account Account
 	rows, err := conn.Query(fmt.Sprintf(`SELECT * FROM accounts WHERE name = "%s"`, name))
 	if err != nil {
-		return account, nil
+		conn.err = err
+		return account
 	}
 	if rows.Next() {
 		if err := rows.Scan(&account.Id, &account.Name, &account.Passwd); err != nil {
-			return account, err
+			conn.err = err
+			return account
 		}
+	} else {
+		conn.err = fmt.Errorf("Account name %s not found", name)
+		return account
 	}
-	return account, nil
+	return account
 }
 
-func (conn *DbConnection) AddAccount(name string, passwd string) error {
+func (conn *DbConnection) AddAccount(name string, passwd string) {
+	if conn.err != nil {
+		return
+	}
 	cmd := fmt.Sprintf(`
 		INSERT INTO accounts (name, passwd) 
 		VALUES ('%s', '%s');`,
@@ -146,34 +167,36 @@ func (conn *DbConnection) AddAccount(name string, passwd string) error {
 	)
 	_, err := conn.Exec(cmd)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
-	return nil
 }
 
-func (conn *DbConnection) DeleteAccount(id int) error {
+func (conn *DbConnection) DeleteAccount(id int) {
+	if conn.err != nil {
+		return
+	}
 	cmd := fmt.Sprintf(`DELETE FROM accounts WHERE id = %d`, id)
 	_, err := conn.Exec(cmd)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
-	return nil
 }
 
-func (conn *DbConnection) CreateBlogTables() error {
-	err := conn.CreateBlogHeaderTable()
-	if err != nil {
-		return err
+func (conn *DbConnection) CreateBlogTables() {
+	if conn.err != nil {
+		return
 	}
-	err = conn.CreateBlogTable()
-	if err != nil {
-		return err
-	}
-	return nil
+	conn.CreateBlogHeaderTable()
+	conn.CreateBlogTable()
 }
 
-func (conn *DbConnection) CreateBlogHeaderTable() error {
-	res, err := conn.Exec(
+func (conn *DbConnection) CreateBlogHeaderTable() {
+	if conn.err != nil {
+		return
+	}
+	_, err := conn.Exec(
 		`CREATE TABLE blog_headers (
 			id      SERIAL PRIMARY KEY,
 			title   varchar(50),
@@ -183,13 +206,15 @@ func (conn *DbConnection) CreateBlogHeaderTable() error {
 		);`,
 	)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
-	utils.Use(res)
-	return nil
 }
 
-func (conn *DbConnection) CreateBlogTable() error {
+func (conn *DbConnection) CreateBlogTable() {
+	if conn.err != nil {
+		return
+	}
 	_, err := conn.Exec(
 		`CREATE TABLE blogs (
 			id      SERIAL PRIMARY KEY,
@@ -197,12 +222,15 @@ func (conn *DbConnection) CreateBlogTable() error {
 		);`,
 	)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
-	return nil
 }
 
-func (conn *DbConnection) CreateAccountTable() error {
+func (conn *DbConnection) CreateAccountTable() {
+	if conn.err != nil {
+		return
+	}
 	_, err := conn.Exec(
 		`CREATE TABLE accounts (
 			id      SERIAL PRIMARY KEY,
@@ -211,21 +239,26 @@ func (conn *DbConnection) CreateAccountTable() error {
 		);`,
 	)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
-	return nil
 }
 
-func (conn *DbConnection) DropTable(tableName string) error {
-	res, err := conn.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
+func (conn *DbConnection) DropTable(tableName string) {
+	if conn.err != nil {
+		return
+	}
+	_, err := conn.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
-	utils.Use(res)
-	return nil
 }
 
-func (conn *DbConnection) AddBlog(blog Blog) error {
+func (conn *DbConnection) AddBlog(blog Blog) {
+	if conn.err != nil {
+		return
+	}
 	// Insert into blog headers
 	cmd := fmt.Sprintf(`
 		INSERT INTO blog_headers (title, author, date, preview) 
@@ -234,7 +267,8 @@ func (conn *DbConnection) AddBlog(blog Blog) error {
 	)
 	_, err := conn.Exec(cmd)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
 
 	// Insert into blogs(content)
@@ -245,9 +279,9 @@ func (conn *DbConnection) AddBlog(blog Blog) error {
 	)
 	_, err = conn.Exec(cmd)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
-	return nil
 }
 
 func (conn *DbConnection) UpdateTable(
@@ -256,6 +290,9 @@ func (conn *DbConnection) UpdateTable(
 	field string,
 	value string,
 ) error {
+	if conn.err != nil {
+		return nil
+	}
 	cmd := fmt.Sprintf(`
 		UPDATE %s SET %s = %s WHERE %s;`,
 		tableName, field, value, condition,
@@ -267,18 +304,26 @@ func (conn *DbConnection) UpdateTable(
 	return nil
 }
 
-func (conn *DbConnection) DeleteBlog(blogId int) error {
+func (conn *DbConnection) DeleteBlog(blogId int) {
+	if conn.err != nil {
+		return
+	}
 	cmd := fmt.Sprintf(`DELETE FROM blog_headers WHERE id = %d`, blogId)
 	_, err := conn.Exec(cmd)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
 	cmd = fmt.Sprintf(`DELETE FROM blogs WHERE id = %d`, blogId)
 	_, err = conn.Exec(cmd)
 	if err != nil {
-		return err
+		conn.err = err
+		return
 	}
-	return nil
+}
+
+func (conn *DbConnection) Error() error {
+	return conn.err
 }
 
 func Instance(logger logger.Effect) (DbConnection, error) {

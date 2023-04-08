@@ -1,5 +1,7 @@
 package db
 
+import "github.com/ireina7/void/context"
+
 // BlogHeader table
 // | id | author | date | preview |
 type BlogHeader struct {
@@ -25,36 +27,37 @@ type Account struct {
 }
 
 type Effect interface {
+	context.Effect
 	// Query blog header (without content)
-	QueryBlogHeaders(expr string) ([]BlogHeader, error)
+	QueryBlogHeaders(expr string) []BlogHeader
 
 	// Query the whole blog (with content)
-	QueryBlog(id int) (Blog, error)
+	QueryBlog(id int) Blog
 
 	// Create blog header and blog content tables
-	CreateBlogTables() error
+	CreateBlogTables()
 
 	// Add new blog
-	AddBlog(blog Blog) error
+	AddBlog(blog Blog)
 
 	// Delete blog by id
-	DeleteBlog(blogId int) error
+	DeleteBlog(blogId int)
 
 	// Create account table
-	CreateAccountTable() error
+	CreateAccountTable()
 
 	// Query account info by name
-	QueryAccount(name string) (Account, error)
+	QueryAccount(name string) Account
 
 	// Add account
-	AddAccount(name string, passwd string) error
+	AddAccount(name string, passwd string)
 
 	// Delete account by id
-	DeleteAccount(id int) error
+	DeleteAccount(id int)
 
 	// Drop table by name
-	DropTable(tableName string) error
+	DropTable(tableName string)
 
 	// Close database connection
-	Close() error
+	Close()
 }

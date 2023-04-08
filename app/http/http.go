@@ -6,6 +6,7 @@ import (
 
 	"github.com/ireina7/void/conf"
 	localConf "github.com/ireina7/void/conf/local"
+	"github.com/ireina7/void/context"
 	"github.com/ireina7/void/db"
 	postgres "github.com/ireina7/void/db/postgres"
 	"github.com/ireina7/void/logger"
@@ -15,20 +16,23 @@ import (
 type Conf = conf.Effect
 type Logger = logger.Effect
 type Database = db.Effect
+type Context = context.Effect
 
 // The main app structure
-// Having 3 main effects:
+// Having 4 main effects:
+// - Context: Context abstraction
 // - Conf: Configuration
 // - Logger: Logging
 // - Database: Database CRUD
-type App struct {
+type HttpApp struct {
+	Context
 	Conf
 	Logger
 	Database
 }
 
-func Instance() (App, error) {
-	var app App = App{}
+func Instance() (HttpApp, error) {
+	var app HttpApp = HttpApp{}
 
 	// Configuration
 	conf := localConf.Instance()
@@ -48,16 +52,23 @@ func Instance() (App, error) {
 	}
 	app.Database = &db
 
+	// ctx := context.LocalContext{}
+	// app.Context = &ctx
+
 	return app, nil
+}
+
+func (app *HttpApp) Error() error {
+	return nil
 }
 
 // The main App logic: Including http routes for all functions
 // No error should be returned as they should be handled inside.
-func (app *App) Run() {
+func (app *HttpApp) Run() {
 	// Handle closing
 	defer func() {
-		err := app.Database.Close()
-		if err != nil {
+		app.Database.Close()
+		if err := app.Database.Error(); err != nil {
 			app.Logger.Fatal(
 				errors.New("Database closing error: " + err.Error()),
 			)
@@ -69,8 +80,8 @@ func (app *App) Run() {
 	if dbRebuild {
 		app.DropTable("blog_headers")
 		app.DropTable("blogs")
-		err := app.CreateBlogTables()
-		if err != nil {
+		app.CreateBlogTables()
+		if err := app.Database.Error(); err != nil {
 			app.Fatal(err)
 		}
 	}
